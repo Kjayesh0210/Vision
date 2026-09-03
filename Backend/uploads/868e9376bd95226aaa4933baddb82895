@@ -1,0 +1,3 @@
+asset_id,asset_type,station_code,station_name,installation_date,asset_age_years,expected_life_years,initial_condition_score
+TEST-001,Track,NDLS,New Delhi,2020-01-15,5,30,85
+TEST-002,Bridge,BPL,Bhopal,2018-06-20,7,50,78
