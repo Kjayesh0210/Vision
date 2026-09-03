@@ -4,6 +4,8 @@ const AssetUsage = require("../models/AssetUsage");
 const FailureEvent = require("../models/FailureEvent");
 const MaintenanceHistory = require("../models/MaintenanceHistory");
 const MaintenanceSchedule = require("../models/MaintenanceSchedule");
+const AssetRiskScore = require("../models/AssetRiskScore");
+const AssetExplanation = require("../models/AssetExplanation");
 
 const getAssets = async (req, res, next) => {
   try {
@@ -56,26 +58,39 @@ const getAssetDetails = async (req, res, next) => {
       });
     }
 
-    const [inspections, usage, failures, maintenance, schedule] =
-      await Promise.all([
-        Inspection.find({ asset_id: assetId })
-          .sort({ inspection_date: -1 })
-          .lean(),
+    const [
+      inspections,
+      usage,
+      failures,
+      maintenance,
+      schedule,
+      risk,
+      explanation,
+    ] = await Promise.all([
+      Inspection.find({ asset_id: assetId })
+        .sort({ inspection_date: -1 })
+        .lean(),
 
-        AssetUsage.find({ asset_id: assetId }).sort({ usage_month: -1 }).lean(),
+      AssetUsage.find({ asset_id: assetId }).sort({ usage_month: -1 }).lean(),
 
-        FailureEvent.find({ asset_id: assetId })
-          .sort({ failure_date: -1 })
-          .lean(),
+      FailureEvent.find({ asset_id: assetId })
+        .sort({ failure_date: -1 })
+        .lean(),
 
-        MaintenanceHistory.find({ asset_id: assetId })
-          .sort({ maintenance_date: -1 })
-          .lean(),
+      MaintenanceHistory.find({ asset_id: assetId })
+        .sort({ maintenance_date: -1 })
+        .lean(),
 
-        MaintenanceSchedule.findOne({
-          asset_id: assetId,
-        }).lean(),
-      ]);
+      MaintenanceSchedule.findOne({ asset_id: assetId }).lean(),
+
+      AssetRiskScore.findOne({ asset_id: assetId })
+        .sort({ snapshot_date: -1 })
+        .lean(),
+
+      AssetExplanation.findOne({ asset_id: assetId })
+        .sort({ snapshot_date: -1 })
+        .lean(),
+    ]);
 
     res.json({
       success: true,
@@ -86,6 +101,8 @@ const getAssetDetails = async (req, res, next) => {
         failures,
         maintenance,
         schedule,
+        risk,
+        explanation,
       },
     });
   } catch (error) {

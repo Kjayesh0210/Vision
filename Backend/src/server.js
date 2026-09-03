@@ -10,6 +10,8 @@ const importRoutes = require("./routes/import.routes");
 const assetRoutes = require("./routes/asset.routes");
 const errorHandler = require("./middleware/error.middleware");
 const taskRoutes = require("./routes/task.routes");
+const mlImportRoutes = require("./routes/mlImport.routes");
+const riskRoutes = require("./routes/risk.routes");
 
 const app = express();
 
@@ -30,6 +32,8 @@ app.get("/api/health", (req, res) => {
 app.use("/api/import", importRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/tasks", taskRoutes);
+app.use("/api/ml", mlImportRoutes);
+app.use("/api/risks", riskRoutes);
 
 const PORT = process.env.PORT || 5000;
 
