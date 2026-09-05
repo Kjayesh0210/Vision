@@ -12,6 +12,8 @@ const errorHandler = require("./middleware/error.middleware");
 const taskRoutes = require("./routes/task.routes");
 const mlImportRoutes = require("./routes/mlImport.routes");
 const riskRoutes = require("./routes/risk.routes");
+const planningRoutes = require("./routes/planning.routes");
+const approvalRoutes = require("./routes/approval.routes");
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use("/api/assets", assetRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/ml", mlImportRoutes);
 app.use("/api/risks", riskRoutes);
+app.use("/api/planning", planningRoutes);
+app.use("/api/approvals", approvalRoutes);
 
 const PORT = process.env.PORT || 5000;
 
