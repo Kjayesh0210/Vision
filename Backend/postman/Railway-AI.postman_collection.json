@@ -1,0 +1,542 @@
+{
+  "info": {
+    "name": "Railway AI Block Planning",
+    "description": "Backend (Express, :5000) -> ML engine (Python, :8000).\n\nStart both servers first:\n  python Vision/ML/api_server.py 8000\n  cd Vision/Backend && npm run dev\n\nRun '1. Create block request' first: it stores {{requestId}} for the other Block Request calls.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api"
+    },
+    {
+      "key": "mlUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Backend health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ML engine health (via backend)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ai/health",
+            "description": "503 here means the Python ML server is not running."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Block Requests (form -> ML -> DB)",
+      "item": [
+        {
+          "name": "1. Create block request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department\": \"Engineering\",\n  \"maintenanceType\": \"Track Maintenance\",\n  \"priority\": \"MEDIUM\",\n  \"sectionId\": \"LNL-PUNE\",\n  \"fromLocation\": \"Lonavala\",\n  \"toLocation\": \"Pune\",\n  \"fromKm\": 45.0,\n  \"toKm\": 52.0,\n  \"assetId\": \"AST027697\",\n  \"submittedBy\": \"SSE/P-Way Lonavala\",\n  \"schedulingPreferences\": {\n    \"preferredDate\": \"16/09/2026\",\n    \"durationHours\": 3,\n    \"preferredStartTime\": \"01:00 AM\",\n    \"preferredEndTime\": \"05:00 AM\"\n  },\n  \"resources\": {\n    \"workersRequired\": 10,\n    \"equipmentRequired\": [\n      \"Tamping Machine\"\n    ],\n    \"additionalNotes\": \"Ballast tamping, track alignment, and joint inspection on Up-line\"\n  },\n  \"canBeCombined\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Remove requestId from the body to let the backend generate one. assetId is optional (adds the stored ML risk score)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.requestId) {",
+                  "  pm.collectionVariables.set('requestId', json.data.requestId);",
+                  "}",
+                  "pm.test('Has recommended window', () => pm.expect(json.data.decision.recommendedWindow).to.be.an('object'));",
+                  "pm.test('Shadow block saved hours > 0', () => pm.expect(json.data.decision.multiDepartmentCoordination.downtimeSavedHours).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Get block request",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ai/block-requests/{{requestId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Pick alternative window",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests/{{requestId}}/window",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"optionId\": \"ALTERNATIVE_1\",\n  \"by\": \"Section Controller\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "optionId: RECOMMENDED, ALTERNATIVE_1 or ALTERNATIVE_2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Accept block request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests/{{requestId}}/decision",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"accepted\",\n  \"by\": \"DRM\",\n  \"note\": \"Approved for 16 Sep night block\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5. Reject block request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests/{{requestId}}/decision",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"rejected\",\n  \"by\": \"DRM\",\n  \"note\": \"Clashes with special train\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6. List block requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ai/block-requests?status=accepted&sectionId=LNL-PUNE&limit=20",
+            "description": "Filters are optional: status (recommended | needs_review | accepted | rejected), sectionId, limit."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Validation error (empty body)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown alternative",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/block-requests/{{requestId}}/window",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"optionId\": \"NOPE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AI Engine (pass-through, not saved)",
+      "item": [
+        {
+          "name": "What-if simulation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/what-if",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"corridor\": \"LNL-PUNE\",\n  \"proposed_date\": \"2026-09-16\",\n  \"proposed_start_time\": \"10:30\",\n  \"proposed_end_time\": \"12:00\",\n  \"department\": \"Engineering\",\n  \"maintenance_type\": \"Track Maintenance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Generate optimized plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/generate-plan",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planning_horizon\": \"weekly\",\n  \"start_date\": \"2026-09-16\",\n  \"end_date\": \"2026-09-22\",\n  \"corridor\": \"LNL-PUNE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Omit corridor to plan all corridors."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Priority score",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/ai/priority",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"criticality\": \"Critical\",\n  \"overdue_days\": 4,\n  \"safety_impact\": \"Derailment risk due to rail corrugation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "KPIs (before vs after)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ai/kpis"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ML Data (imported CSV outputs)",
+      "item": [
+        {
+          "name": "Import ML outputs into MongoDB",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/ml/import",
+            "description": "Already done once. Takes ~3 minutes; re-run only when the ML CSVs change."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Risk scores (CRITICAL)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/risks?riskLevel=CRITICAL&limit=5"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Direct ML engine (debug)",
+      "item": [
+        {
+          "name": "ML health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mlUrl}}/api/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ML user-request (no DB save)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{mlUrl}}/api/ai/user-request",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department\": \"Engineering\",\n  \"maintenanceType\": \"Track Maintenance\",\n  \"priority\": \"MEDIUM\",\n  \"sectionId\": \"LNL-PUNE\",\n  \"fromLocation\": \"Lonavala\",\n  \"toLocation\": \"Pune\",\n  \"fromKm\": 45.0,\n  \"toKm\": 52.0,\n  \"assetId\": \"AST027697\",\n  \"submittedBy\": \"SSE/P-Way Lonavala\",\n  \"schedulingPreferences\": {\n    \"preferredDate\": \"16/09/2026\",\n    \"durationHours\": 3,\n    \"preferredStartTime\": \"01:00 AM\",\n    \"preferredEndTime\": \"05:00 AM\"\n  },\n  \"resources\": {\n    \"workersRequired\": 10,\n    \"equipmentRequired\": [\n      \"Tamping Machine\"\n    ],\n    \"additionalNotes\": \"Ballast tamping, track alignment, and joint inspection on Up-line\"\n  },\n  \"canBeCombined\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
