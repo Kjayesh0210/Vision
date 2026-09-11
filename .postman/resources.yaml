@@ -1,0 +1,7 @@
+# Use this workspace to collaborate
+workspace:
+  id: a2ca5b8c-8b54-424e-8556-7df28d802e58
+
+localResources:
+  collections:
+    - ../Backend/postman/Railway-AI.postman_collection.json
